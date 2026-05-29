@@ -6,4 +6,4 @@
 	url = https://github.com/flyrun9527/oag-agent.git
 [submodule "claude-code"]
 	path = claude-code
-	url = git@github.com:caochun/cc.git
+	url = https://github.com/flyrun9527/claude-code.git
