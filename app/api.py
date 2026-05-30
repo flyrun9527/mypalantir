@@ -19,7 +19,10 @@ from oag.registry import FunctionRegistry
 from oag.schema import Ontology
 from oag.store import Store
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+ROOT_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = ROOT_DIR / "static"
+FRONTEND_DIST_DIR = ROOT_DIR / "frontend" / "dist"
+FRONTEND_ASSETS_DIR = FRONTEND_DIST_DIR / "assets"
 
 
 def _make_agent(ontology: Ontology, store: Store,
@@ -46,8 +49,13 @@ def create_app(ontology: Ontology, store: Store,
     agent = _make_agent(ontology, store, registry, llm_config)
     _domain_dir = Path(domain_dir).resolve() if domain_dir else None
 
+    if FRONTEND_ASSETS_DIR.exists():
+        app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS_DIR), name="assets")
+
     @app.get("/")
     def index():
+        if (FRONTEND_DIST_DIR / "index.html").exists():
+            return FileResponse(FRONTEND_DIST_DIR / "index.html")
         return FileResponse(STATIC_DIR / "index.html")
 
     @app.get("/prompts")
@@ -129,11 +137,12 @@ def create_app(ontology: Ontology, store: Store,
         body = await request.json()
         session_id = body.get("session_id", "default")
         approved = body.get("approved", False)
+        answer = body.get("answer")
         if not agent.has_pending(session_id):
             return JSONResponse({"error": "no pending confirmation"}, 400)
 
         def event_generator():
-            for event in agent.confirm_tool(session_id, approved):
+            for event in agent.confirm_tool(session_id, approved, answer=answer):
                 d = event_to_dict(event)
                 yield {"event": d["type"], "data": json.dumps(d, ensure_ascii=False)}
 
@@ -173,6 +182,9 @@ def create_multi_app(domain_base: str, llm_config: dict) -> FastAPI:
     app = FastAPI(title="OAG Multi-Domain")
     base = Path(domain_base).resolve()
 
+    if FRONTEND_ASSETS_DIR.exists():
+        app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS_DIR), name="assets")
+
     domains: dict[str, dict] = {}
     for d in sorted(base.iterdir()):
         if not d.is_dir() or not (d / "ontology.yaml").exists():
@@ -188,7 +200,15 @@ def create_multi_app(domain_base: str, llm_config: dict) -> FastAPI:
 
     @app.get("/")
     def home():
+        if (FRONTEND_DIST_DIR / "index.html").exists():
+            return FileResponse(FRONTEND_DIST_DIR / "index.html")
         return FileResponse(STATIC_DIR / "home.html")
+
+    @app.get("/d/{domain_name}/")
+    def frontend_domain(domain_name: str):
+        if (FRONTEND_DIST_DIR / "index.html").exists():
+            return FileResponse(FRONTEND_DIST_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html")
 
     @app.get("/domains")
     def list_domains():
