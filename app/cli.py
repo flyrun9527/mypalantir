@@ -6,14 +6,14 @@ from pathlib import Path
 import click
 from dotenv import load_dotenv
 
-from oag.loader import load_domain
+from oag.ontology.loader import load_domain
 
 
 def _init(env_file: str = ".env"):
     load_dotenv(env_file)
-    domain_dir = os.getenv("DOMAIN", "domains/fee")
+    domain_dir = os.getenv("DOMAIN", "domains/hv_access")
 
-    ontology, store, registry = load_domain(domain_dir)
+    ontology, repository, registry = load_domain(domain_dir)
 
     llm_config = {
         "api_key": os.getenv("LLM_API_KEY", "sk-placeholder"),
@@ -21,7 +21,7 @@ def _init(env_file: str = ".env"):
         "model": os.getenv("LLM_MODEL", "qwen3.5-plus"),
     }
 
-    return ontology, store, registry, llm_config, domain_dir
+    return ontology, repository, registry, llm_config, domain_dir
 
 
 @click.group()
@@ -41,8 +41,8 @@ def serve(host: str, port: int):
 
     domain_env = os.getenv("DOMAIN", "")
     if domain_env:
-        ontology, store, registry, llm_config, domain_dir = _init()
-        app = create_app(ontology, store, registry, llm_config, domain_dir=domain_dir)
+        ontology, repository, registry, llm_config, domain_dir = _init()
+        app = create_app(ontology, repository, registry, llm_config, domain_dir=domain_dir)
     else:
         load_dotenv()
         llm_config = {
@@ -58,14 +58,14 @@ def serve(host: str, port: int):
 @cli.command()
 def chat():
     """Interactive agent chat."""
-    from oag.events import (
+    from oag.runtime.events import (
         CompactEvent, ConfirmationEvent, TextEvent, ToolCallEvent,
     )
 
     from .api import _make_agent
 
-    ontology, store, registry, llm_config, _ = _init()
-    agent = _make_agent(ontology, store, registry, llm_config)
+    ontology, repository, registry, llm_config, _ = _init()
+    agent = _make_agent(ontology, repository, registry, llm_config)
 
     click.echo(f"OAG Agent ({ontology.name}: {ontology.description})")
     click.echo("输入问题开始对话，输入 quit 退出\n")
@@ -104,7 +104,7 @@ def chat():
 @click.argument("args", nargs=-1)
 def call(function_name: str, args: tuple):
     """Call a function directly. Args as key=value pairs."""
-    ontology, store, registry, llm_config, _ = _init()
+    ontology, repository, registry, llm_config, _ = _init()
 
     if not registry.has(function_name):
         click.echo(f"Unknown function: {function_name}")
@@ -125,14 +125,14 @@ def call(function_name: str, args: tuple):
 @cli.command()
 def info():
     """Show ontology information."""
-    ontology, store, registry, llm_config, _ = _init()
+    ontology, repository, registry, llm_config, _ = _init()
 
     click.echo(f"Ontology: {ontology.name} — {ontology.description}\n")
 
     click.echo("Objects:")
     for name, obj in ontology.objects.items():
         kind_label = f" [{obj.kind}]" if obj.kind != "entity" else ""
-        count = store.table_count(name)
+        count = repository.table_count(name)
         click.echo(f"  {name}{kind_label}: {obj.description} ({count} records)")
 
     click.echo("\nFunctions:")
@@ -159,7 +159,7 @@ def info():
 
 @cli.group()
 def distill():
-    """Domain Distiller — 从业务文档生成 OAG domain"""
+    """Ontology Builder — 从业务文档生成 OAG domain"""
     pass
 
 
@@ -168,12 +168,10 @@ def distill():
 @click.option("--output", default=None, help="输出目录，默认与 docs_dir 相同")
 @click.option("--phase", default=1, type=int, help="运行到指定阶段（0=文档准备, 1=概念发现）")
 def run(docs_dir: str, output: str | None, phase: int):
-    """从文档开始运行 distiller pipeline."""
+    """从文档开始运行 ontology builder pipeline."""
     import logging
-    import sys
 
-    sys.path.insert(0, str(Path("domains").resolve()))
-    from distiller.pipeline import DistillerPipeline
+    from domains.tools.ontology_builder.pipeline import DistillerPipeline
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     load_dotenv()
@@ -197,11 +195,11 @@ def run(docs_dir: str, output: str | None, phase: int):
 def extract_images(docs_dir: str, dry_run: bool):
     """用 LLM 将文档中的图片表格转为 Markdown 文本（需要视觉模型）."""
     import logging
-    import sys
 
-    sys.path.insert(0, str(Path("domains").resolve()))
-    from distiller.image_extract import process_domain_images
-    from distiller.llm import DistillerLLM
+    from domains.tools.ontology_builder.llm import DistillerLLM
+
+    # image_extract not yet implemented in v2
+    process_domain_images = None
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     load_dotenv()
@@ -225,11 +223,9 @@ def extract_images(docs_dir: str, dry_run: bool):
 @distill.command()
 @click.argument("state_dir")
 def status(state_dir: str):
-    """查看 distiller pipeline 状态."""
-    import sys
+    """查看 ontology builder pipeline 状态."""
 
-    sys.path.insert(0, str(Path("domains").resolve()))
-    from distiller.pipeline import DistillerPipeline
+    from domains.tools.ontology_builder.pipeline import DistillerPipeline
 
     docs_dir = str(Path(state_dir).parent)
     pipeline = DistillerPipeline(docs_dir)
