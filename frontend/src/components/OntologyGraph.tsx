@@ -33,10 +33,10 @@ export function OntologyGraph({ ontology, onSelectObject }: OntologyGraphProps) 
   }, [ontology]);
 
   return (
-    <div className="h-[420px] overflow-hidden rounded border border-zinc-800 bg-zinc-950">
+    <div className="h-[420px] overflow-hidden rounded-md border" style={{ borderColor: "var(--line)", background: "var(--bg)" }}>
       <ForceGraph2D
         graphData={graph}
-        backgroundColor="#09090b"
+        backgroundColor="rgba(0,0,0,0)"
         nodeRelSize={5}
         nodeLabel={(node) => `${(node as GraphNode).label} · ${(node as GraphNode).kind}`}
         linkLabel={(link) => (link as GraphLink).label}
@@ -49,11 +49,11 @@ export function OntologyGraph({ ontology, onSelectObject }: OntologyGraphProps) 
           ctx.fillStyle = item.color;
           ctx.fill();
           ctx.font = `${fontSize}px Inter, ui-sans-serif`;
-          ctx.fillStyle = "#e4e4e7";
+          ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--text").trim() || "#e4e4e7";
           ctx.textAlign = "center";
           ctx.fillText(label, item.x, item.y + item.value + fontSize + 2);
         }}
-        linkColor={() => "#3f3f46"}
+        linkColor={() => getComputedStyle(document.documentElement).getPropertyValue("--line").trim() || "#3f3f46"}
         linkDirectionalParticles={1}
         linkDirectionalParticleSpeed={0.004}
         onNodeClick={(node) => onSelectObject((node as GraphNode).id)}

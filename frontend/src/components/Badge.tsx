@@ -6,17 +6,17 @@ type BadgeProps = {
 };
 
 const tones = {
-  neutral: "border-zinc-700 bg-zinc-900 text-zinc-300",
-  green: "border-emerald-700/60 bg-emerald-950/70 text-emerald-300",
-  blue: "border-sky-700/60 bg-sky-950/70 text-sky-300",
-  amber: "border-amber-700/60 bg-amber-950/70 text-amber-300",
-  red: "border-red-700/60 bg-red-950/70 text-red-300",
-  purple: "border-purple-700/60 bg-purple-950/70 text-purple-300"
+  neutral: "",
+  green: "badge-green",
+  blue: "badge-blue",
+  amber: "badge-amber",
+  red: "badge-red",
+  purple: "badge-purple"
 };
 
 export function Badge({ children, tone = "neutral" }: BadgeProps) {
   return (
-    <span className={cx("inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium", tones[tone])}>
+    <span className={cx("badge", tones[tone])}>
       {children}
     </span>
   );

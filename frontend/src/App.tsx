@@ -10,7 +10,6 @@ import { EmptyState } from "./components/EmptyState";
 import { FunctionsPanel } from "./components/FunctionsPanel";
 import { Header } from "./components/Header";
 import { ModelPanel } from "./components/ModelPanel";
-import { Sidebar } from "./components/Sidebar";
 import { WorkflowPanel } from "./components/WorkflowPanel";
 
 const views = new Set(["chat", "model", "functions", "data", "workflows"]);
@@ -22,6 +21,10 @@ function getViewFromUrl() {
 
 export default function App() {
   const [activeView, setActiveView] = useState(getViewFromUrl);
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    const saved = localStorage.getItem("oag-theme");
+    return saved === "light" ? "light" : "dark";
+  });
   const currentDomain = useConsoleStore((state) => state.currentDomain);
   const ontology = useConsoleStore((state) => state.ontology);
   const setDomains = useConsoleStore((state) => state.setDomains);
@@ -94,6 +97,11 @@ export default function App() {
     };
   }, [boot, loadDomain]);
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("oag-theme", theme);
+  }, [theme]);
+
   function changeView(view: string) {
     setActiveView(view);
     const url = new URL(window.location.href);
@@ -103,13 +111,18 @@ export default function App() {
 
   return (
     <ErrorBoundary fallback={<div className="p-6 text-red-300">前端渲染出错，请查看控制台。</div>}>
-      <div className="flex h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-        <Sidebar activeView={activeView} onViewChange={changeView} />
-        <main className="flex min-w-0 flex-1 flex-col">
-          <Header onRefresh={() => loadDomain(currentDomain)} />
-          <div className="min-h-0 flex-1 overflow-hidden p-4">
+      <div className="app-frame">
+        <main className="app-main">
+          <Header
+            onRefresh={() => loadDomain(currentDomain)}
+            activeView={activeView}
+            onViewChange={changeView}
+            theme={theme}
+            onToggleTheme={() => setTheme((value) => value === "dark" ? "light" : "dark")}
+          />
+          <div className="content-stage">
             {!ontology ? (
-              <EmptyState title="请选择 domain" detail="左侧选择一个业务域后，可以查看本体模型、函数、规则、数据和 Agent 对话。" />
+              <EmptyState title="请选择 domain" detail="在顶部选择业务域后，可以查看本体模型、函数、规则、数据和 Agent 对话。" />
             ) : activeView === "chat" ? (
               <ChatPanel />
             ) : activeView === "model" ? (

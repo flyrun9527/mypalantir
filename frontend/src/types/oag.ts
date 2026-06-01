@@ -91,23 +91,52 @@ export type Ontology = {
 };
 
 export type ChatRole = "user" | "assistant" | "system" | "tool";
+export type ChatPhase = "request" | "work" | "notice" | "response";
 
 export type ChatMessage = {
   id: string;
   role: ChatRole;
   content: string;
   createdAt: string;
+  turnId?: string;
+  phase?: ChatPhase;
+  sequence?: number;
   toolName?: string;
   toolArgs?: unknown;
   toolResult?: string;
 };
 
+export type TraceTone =
+  | "turn"
+  | "tool-call"
+  | "tool-result"
+  | "text"
+  | "debug-request"
+  | "debug-response"
+  | "reasoning"
+  | "planner"
+  | "executor"
+  | "reviewer"
+  | "synth"
+  | "error";
+
+export type TraceEvent = {
+  id: string;
+  tone: TraceTone;
+  label: string;
+  detail?: unknown;
+  createdAt: string;
+};
+
 export type StreamEvent =
   | { type: "text"; content: string }
   | { type: "tool_call"; name: string; args?: unknown; result?: string }
-  | { type: "confirmation"; tool_name: string; args?: unknown; reason?: string }
+  | { type: "confirmation_required"; tool_name: string; args?: unknown; reason?: string }
   | { type: "question"; question: string; options?: Array<{ label: string; description?: string }>; multi_select?: boolean }
+  | { type: "debug"; stage?: string; content?: string }
+  | { type: "reasoning"; content?: string }
   | { type: "compact" }
+  | { type: "hook_blocked"; hook_event?: string; reason?: string }
   | { type: "done" }
   | Record<string, unknown>;
 

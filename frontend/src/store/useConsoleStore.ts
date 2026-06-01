@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import type { ChatMessage, DomainSummary, Ontology, PendingAction, QueryRow } from "../types/oag";
+import type { ChatMessage, DomainSummary, Ontology, PendingAction, QueryRow, TraceEvent } from "../types/oag";
 
 type ConsoleState = {
   domains: DomainSummary[];
@@ -12,6 +12,7 @@ type ConsoleState = {
   selectedFunction: string | null;
   queryRows: QueryRow[];
   messages: ChatMessage[];
+  traceEvents: TraceEvent[];
   pendingAction: PendingAction | null;
   loading: {
     boot: boolean;
@@ -29,7 +30,11 @@ type ConsoleState = {
   setQueryRows: (rows: QueryRow[]) => void;
   appendMessage: (message: ChatMessage) => void;
   appendAssistantText: (id: string, text: string) => void;
+  replaceMessages: (messages: ChatMessage[]) => void;
   clearMessages: () => void;
+  appendTraceEvent: (event: TraceEvent) => void;
+  appendTraceDetail: (id: string, detail: string) => void;
+  clearTraceEvents: () => void;
   setPendingAction: (action: PendingAction | null) => void;
   setLoading: (key: keyof ConsoleState["loading"], value: boolean) => void;
 };
@@ -45,6 +50,7 @@ export const useConsoleStore = create<ConsoleState>()(
     selectedFunction: null,
     queryRows: [],
     messages: [],
+    traceEvents: [],
     pendingAction: null,
     loading: {
       boot: true,
@@ -83,8 +89,22 @@ export const useConsoleStore = create<ConsoleState>()(
       const existing = state.messages.find((message) => message.id === id);
       if (existing) existing.content += text;
     }),
+    replaceMessages: (messages) => set((state) => {
+      state.messages = messages;
+    }),
     clearMessages: () => set((state) => {
       state.messages = [];
+    }),
+    appendTraceEvent: (event) => set((state) => {
+      state.traceEvents.push(event);
+    }),
+    appendTraceDetail: (id, detail) => set((state) => {
+      const existing = state.traceEvents.find((event) => event.id === id);
+      if (!existing) return;
+      existing.detail = `${String(existing.detail ?? "")}${detail}`;
+    }),
+    clearTraceEvents: () => set((state) => {
+      state.traceEvents = [];
     }),
     setPendingAction: (action) => set((state) => {
       state.pendingAction = action;

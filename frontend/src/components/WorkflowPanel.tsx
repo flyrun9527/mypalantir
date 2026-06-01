@@ -35,34 +35,40 @@ export function WorkflowPanel() {
   const workflows = Object.entries(ontology.workflows ?? {});
 
   return (
-    <section className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="min-h-0 overflow-auto rounded border border-zinc-800 bg-zinc-950 p-4">
-        <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-zinc-100">
-          <GitBranch className="h-4 w-4 text-emerald-300" />
-          Workflow Mermaid
+    <section className="grid h-full min-h-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="console-panel min-h-0 overflow-auto p-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 panel-title">
+              <GitBranch className="h-4 w-4" style={{ color: "var(--accent-strong)" }} />
+              Workflow Mermaid
+            </div>
+            <p className="panel-subtitle">流程定义、步骤依赖和函数编排。</p>
+          </div>
+          <Badge tone="green">{workflows.length} workflows</Badge>
         </div>
         {diagram ? (
-          <div className="rounded border border-zinc-800 bg-zinc-900 p-4" dangerouslySetInnerHTML={{ __html: diagram }} />
+          <div className="rounded-md border p-4" style={{ borderColor: "var(--line)", background: "var(--bg-elevated)" }} dangerouslySetInnerHTML={{ __html: diagram }} />
         ) : (
           <EmptyState title="没有 workflow 图" detail="当前本体没有 workflow，或流程定义无法渲染。" />
         )}
 
         <div className="mt-4 grid gap-3">
           {workflows.map(([name, workflow]) => (
-            <div key={name} className="rounded border border-zinc-800 bg-zinc-900/70 p-4">
+            <div key={name} className="resource-card">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="font-semibold text-zinc-100">{name}</h3>
+                <h3 className="font-semibold" style={{ color: "var(--text)" }}>{name}</h3>
                 <Badge tone="green">{workflow.steps?.length ?? 0} steps</Badge>
               </div>
-              <p className="mt-2 text-sm leading-6 text-zinc-400">{workflow.description || workflow.trigger || "没有描述"}</p>
+              <p className="mt-2 text-sm leading-6" style={{ color: "var(--text-muted)" }}>{workflow.description || workflow.trigger || "没有描述"}</p>
               <ol className="mt-3 space-y-2">
                 {(workflow.steps ?? []).map((step, index) => (
-                  <li key={`${name}-${step.name}-${index}`} className="rounded border border-zinc-800 bg-zinc-950 p-3 text-sm">
+                  <li key={`${name}-${step.name}-${index}`} className="rounded-md border p-3 text-sm" style={{ borderColor: "var(--line)", background: "var(--surface)" }}>
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-100">{index + 1}. {step.name}</span>
+                      <span style={{ color: "var(--text)" }}>{index + 1}. {step.name}</span>
                       {step.function ? <Badge tone="purple">{step.function}</Badge> : null}
                     </div>
-                    {step.description ? <p className="mt-1 text-xs text-zinc-500">{step.description}</p> : null}
+                    {step.description ? <p className="mt-1 text-xs" style={{ color: "var(--text-faint)" }}>{step.description}</p> : null}
                   </li>
                 ))}
               </ol>
@@ -71,31 +77,32 @@ export function WorkflowPanel() {
         </div>
       </div>
 
-      <aside className="min-h-0 overflow-auto rounded border border-zinc-800 bg-zinc-950">
-        <div className="border-b border-zinc-800 p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-zinc-100">
-            <ListChecks className="h-4 w-4 text-amber-300" />
+      <aside className="console-panel min-h-0 overflow-auto">
+        <div className="panel-header">
+          <div className="flex items-center gap-2 panel-title">
+            <ListChecks className="h-4 w-4" style={{ color: "var(--warning)" }} />
             规则
           </div>
+          <Badge tone="amber">{rules.length}</Badge>
         </div>
         <div className="space-y-3 p-4">
           {rules.length ? rules.map(([name, rule]) => (
-            <div key={name} className="rounded border border-zinc-800 bg-zinc-900/70 p-3">
+            <div key={name} className="resource-card">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-zinc-100">{name}</h3>
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text)" }}>{name}</h3>
                 <Badge tone="amber">{rule.rule_type || "rule"}</Badge>
               </div>
-              <p className="mt-2 text-xs leading-5 text-zinc-500">{rule.description}</p>
+              <p className="mt-2 text-xs leading-5" style={{ color: "var(--text-faint)" }}>{rule.description}</p>
               {rule.applies_to?.length ? <div className="mt-2 flex flex-wrap gap-1">{rule.applies_to.map((item) => <Badge key={item}>{item}</Badge>)}</div> : null}
             </div>
           )) : <EmptyState title="没有规则" detail="当前本体没有 rules 定义。" />}
         </div>
-        <div className="border-t border-zinc-800 p-4">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-100">
-            <ScrollText className="h-4 w-4 text-sky-300" />
+        <div className="border-t p-4" style={{ borderColor: "var(--line)" }}>
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text)" }}>
+            <ScrollText className="h-4 w-4" style={{ color: "var(--info)" }} />
             Mermaid Source
           </div>
-          <pre className="max-h-64 overflow-auto rounded border border-zinc-800 bg-zinc-900 p-3 text-xs text-zinc-400">{source || "graph TD"}</pre>
+          <pre className="json-block max-h-64">{source || "graph TD"}</pre>
         </div>
       </aside>
     </section>
