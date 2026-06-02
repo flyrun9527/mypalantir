@@ -153,11 +153,14 @@ export type GraphNode = {
   id: string;
   label: string;
   kind: string;
+  summary?: string;
+  description?: string;
   value: number;
   color: string;
 };
 
 export type GraphLink = {
+  id?: string;
   source: string;
   target: string;
   label: string;
