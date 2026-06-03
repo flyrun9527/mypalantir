@@ -136,6 +136,10 @@ def test_json_file_adapter_reads_domain_json_without_sqlite_import(tmp_path):
     assert ontology.objects["Substation"].source.type == "json_file"
     assert rows[0]["substation_id"]
     assert count["count"] == len(json.loads((domain_dir / "data" / "substation.json").read_text()))
-    assert store.table_count("Substation") == 0
+    assert store.table_count("Substation") == count["count"]
+    assert store.execute_sql(
+        "SELECT name FROM sqlite_master WHERE type = ? AND name = ?",
+        ["table", "substation"],
+    ) == []
 
     store.close()
