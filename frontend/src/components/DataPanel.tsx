@@ -13,10 +13,6 @@ type SortState = {
   desc: boolean;
 };
 
-function toSnake(value: string) {
-  return value.replace(/([A-Z])/g, (_, char: string, index: number) => `${index === 0 ? "" : "_"}${char.toLowerCase()}`);
-}
-
 function parseFilterValue(value: string) {
   const trimmed = value.trim();
   if (trimmed === "true") return true;
@@ -47,25 +43,9 @@ function compareValues(a: unknown, b: unknown) {
   return String(a ?? "").localeCompare(String(b ?? ""), "zh-CN");
 }
 
-function applyClientFilters(rows: QueryRow[], filters?: Record<string, unknown>) {
-  if (!filters) return rows;
-  return rows.filter((row) => Object.entries(filters).every(([key, value]) => {
-    const [field, op = "eq"] = key.split("__");
-    const current = row[field];
-    if (op === "like") return String(current ?? "").includes(String(value));
-    if (op === "gt") return Number(current) > Number(value);
-    if (op === "gte") return Number(current) >= Number(value);
-    if (op === "lt") return Number(current) < Number(value);
-    if (op === "lte") return Number(current) <= Number(value);
-    if (op === "ne") return String(current ?? "") !== String(value);
-    return String(current ?? "") === String(value);
-  }));
-}
-
 export function DataPanel() {
   const currentDomain = useConsoleStore((state) => state.currentDomain);
   const ontology = useConsoleStore((state) => state.ontology);
-  const registryFunctions = useConsoleStore((state) => state.registryFunctions);
   const selectedObject = useConsoleStore((state) => state.selectedObject);
   const setSelectedObject = useConsoleStore((state) => state.setSelectedObject);
   const rows = useConsoleStore((state) => state.queryRows);
@@ -76,32 +56,21 @@ export function DataPanel() {
   const [counts, setCounts] = useState<Record<string, number | null>>({});
   const [sort, setSort] = useState<SortState | null>(null);
 
-  const queryWithFallback = useCallback(async (objectName: string, filters?: Record<string, unknown>, limit?: number) => {
-    const directRows = await api.queryObject(currentDomain, objectName, limit, filters);
-    if (directRows.length > 0) return directRows;
-
-    const fallbackName = `list_all_${toSnake(objectName)}`;
-    if (!(fallbackName in registryFunctions)) return directRows;
-
-    try {
-      const data = await api.callFunction(currentDomain, fallbackName, {});
-      const rawRows = Array.isArray(data)
-        ? data
-        : data && typeof data === "object" && Array.isArray((data as { result?: unknown }).result)
-          ? (data as { result: QueryRow[] }).result
-          : [];
-      return applyClientFilters(rawRows as QueryRow[], filters);
-    } catch {
-      return directRows;
-    }
-  }, [currentDomain, registryFunctions]);
+  const queryViaMcp = useCallback(async (objectName: string, filters?: Record<string, unknown>, limit?: number) => {
+    const output = await api.callMcpTool(currentDomain, "query", {
+      object_type: objectName,
+      ...(filters ? { filters } : {}),
+      ...(limit == null ? {} : { limit })
+    });
+    return Array.isArray(output.result) ? output.result as QueryRow[] : [];
+  }, [currentDomain]);
 
   const query = useCallback(async (objectName = selectedObject, explicitFilters = parseFilters(filterText)) => {
     if (!objectName) return;
     setLoading("query", true);
     try {
       setSelectedObject(objectName);
-      const nextRows = await queryWithFallback(objectName, explicitFilters, undefined);
+      const nextRows = await queryViaMcp(objectName, explicitFilters, undefined);
       setRows(nextRows);
       setSort(null);
     } catch (error) {
@@ -109,20 +78,24 @@ export function DataPanel() {
     } finally {
       setLoading("query", false);
     }
-  }, [filterText, queryWithFallback, selectedObject, setLoading, setRows, setSelectedObject]);
+  }, [filterText, queryViaMcp, selectedObject, setLoading, setRows, setSelectedObject]);
 
   const updateCounts = useCallback(async () => {
     if (!ontology?.objects) return;
     const nextCounts: Record<string, number | null> = {};
     await Promise.all(Object.keys(ontology.objects).map(async (name) => {
       try {
-        nextCounts[name] = (await queryWithFallback(name, undefined, undefined)).length;
+        const output = await api.callMcpTool(currentDomain, "count", { object_type: name });
+        const result = output.result;
+        nextCounts[name] = result && typeof result === "object" && "count" in result
+          ? Number((result as { count: unknown }).count)
+          : null;
       } catch {
         nextCounts[name] = null;
       }
     }));
     setCounts(nextCounts);
-  }, [ontology, queryWithFallback]);
+  }, [currentDomain, ontology]);
 
   useEffect(() => {
     if (!selectedObject && ontology?.objects) {
@@ -167,7 +140,7 @@ export function DataPanel() {
               <Database className="h-4 w-4" style={{ color: "var(--info)" }} />
               对象数据
             </div>
-            <p className="panel-subtitle">保留旧页面的对象计数、过滤、排序和 fallback 查询。</p>
+            <p className="panel-subtitle">通过远程 MCP 的 query/count 工具读取对象数据。</p>
           </div>
           <Badge tone="blue">{Object.keys(ontology.objects ?? {}).length}</Badge>
         </div>

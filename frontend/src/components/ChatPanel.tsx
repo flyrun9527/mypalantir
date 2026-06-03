@@ -2,16 +2,13 @@ import {
   Bot,
   Check,
   ChevronDown,
-  Copy,
   Eraser,
   ListRestart,
   Send,
-  Sparkles,
-  Trash2,
   UserRound,
   Wrench,
   X,
-  PanelRightOpen
+  ServerCog
 } from "lucide-react";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -21,7 +18,7 @@ import { api, parseSseFrames } from "../lib/api";
 import { formatTime, stringify } from "../lib/format";
 import { createClientId } from "../lib/id";
 import { useConsoleStore } from "../store/useConsoleStore";
-import type { ChatMessage, ChatPhase, Ontology, StreamEvent, TraceEvent, TraceTone } from "../types/oag";
+import type { ChatMessage, ChatPhase, McpStatus, Ontology, StreamEvent, TraceEvent, TraceTone } from "../types/oag";
 import { Badge } from "./Badge";
 import { EmptyState } from "./EmptyState";
 
@@ -29,12 +26,6 @@ type PromptItem = {
   group: string;
   prompt: string;
   desc?: string;
-};
-
-type TimelineStep = {
-  id: string;
-  label: string;
-  status: "running" | "done" | "error";
 };
 
 type SubmitOptions = {
@@ -132,6 +123,20 @@ const phaseOrder: Record<ChatPhase, number> = {
   response: 3
 };
 
+function mcpStatusLabel(status: McpStatus | null, toolCount: number) {
+  if (!status) return "未连接";
+  if (status.status === "loading") return "加载中";
+  if (status.status === "online") return `在线 · ${toolCount}`;
+  if (status.status === "offline") return "未连接";
+  return "异常";
+}
+
+function mcpStatusTone(status: McpStatus | null) {
+  if (status?.status === "online") return "green";
+  if (status?.status === "loading") return "blue";
+  return "amber";
+}
+
 function orderMessagesForDisplay(messages: ChatMessage[]) {
   const ordered: ChatMessage[] = [];
   const turnBuffer: Array<{ message: ChatMessage; index: number }> = [];
@@ -180,6 +185,8 @@ export function ChatPanel() {
   const messages = useConsoleStore((state) => state.messages);
   const traceEvents = useConsoleStore((state) => state.traceEvents);
   const pendingAction = useConsoleStore((state) => state.pendingAction);
+  const mcpStatus = useConsoleStore((state) => state.mcpStatus);
+  const mcpTools = useConsoleStore((state) => state.mcpTools);
   const appendMessage = useConsoleStore((state) => state.appendMessage);
   const appendAssistantText = useConsoleStore((state) => state.appendAssistantText);
   const replaceMessages = useConsoleStore((state) => state.replaceMessages);
@@ -194,8 +201,7 @@ export function ChatPanel() {
   const [sessionId, setSessionId] = useState(createSessionId);
   const [turnCount, setTurnCount] = useState(0);
   const [activePromptIndex, setActivePromptIndex] = useState(0);
-  const [timelineSteps, setTimelineSteps] = useState<TimelineStep[]>([]);
-  const [sidePanel, setSidePanel] = useState<"trace" | "prompts">("trace");
+  const [toolsOpen, setToolsOpen] = useState(false);
   const assistantId = useRef<string>("");
   const reasoningTraceId = useRef<string>("");
   const currentTurnId = useRef<string>("");
@@ -213,16 +219,6 @@ export function ChatPanel() {
       .filter((item) => !query || item.prompt.toLowerCase().includes(query) || (item.desc ?? "").toLowerCase().includes(query))
       .slice(0, 12);
   }, [input, promptItems]);
-
-  const promptGroups = useMemo(() => {
-    const grouped = new Map<string, PromptItem[]>();
-    for (const item of promptItems) {
-      const group = grouped.get(item.group) ?? [];
-      if (group.length < 8) group.push(item);
-      grouped.set(item.group, group);
-    }
-    return Array.from(grouped.entries()).slice(0, 5);
-  }, [promptItems]);
 
   const addTrace = useCallback((tone: TraceTone, label: string, detail?: unknown) => {
     appendTraceEvent({
@@ -270,16 +266,6 @@ export function ChatPanel() {
     });
   }, [appendMessage]);
 
-  const finishRunningSteps = useCallback((ok: boolean) => {
-    setTimelineSteps((steps) => steps.map((step) => (
-      step.status === "running" ? { ...step, status: ok ? "done" : "error" } : step
-    )));
-  }, []);
-
-  const addTimelineStep = useCallback((label: string, status: TimelineStep["status"] = "running") => {
-    setTimelineSteps((steps) => [...steps, { id: createClientId(), label, status }]);
-  }, []);
-
   const clearStreamTimeout = useCallback(() => {
     if (streamTimeoutRef.current == null) return;
     window.clearTimeout(streamTimeoutRef.current);
@@ -290,18 +276,16 @@ export function ChatPanel() {
     clearStreamTimeout();
     streamRef.current?.close();
     streamRef.current = null;
-    finishRunningSteps(false);
     assistantId.current = "";
     currentTurnId.current = "";
     messageSequence.current = 0;
     reasoningTraceId.current = "";
     setLoading("chat", false);
     if (message && trace) addTrace("error", "stream stopped", message);
-  }, [addTrace, clearStreamTimeout, finishRunningSteps, setLoading]);
+  }, [addTrace, clearStreamTimeout, setLoading]);
 
   const handleEvent = useCallback((event: StreamEvent) => {
     if (event.type === "text") {
-      finishRunningSteps(true);
       reasoningTraceId.current = "";
       const id = ensureAssistantMessage();
       appendAssistantText(id, String(event.content ?? ""));
@@ -310,12 +294,9 @@ export function ChatPanel() {
 
     if (event.type === "tool_call") {
       reasoningTraceId.current = "";
-      finishRunningSteps(true);
       const name = String(event.name ?? "");
-      addTimelineStep(readableTool(name, event.args, ontology));
       addTrace("tool-call", name, event.args);
       if (event.result) {
-        if (isErrorResult(event.result)) finishRunningSteps(false);
         addTrace("tool-result", `${name} result`, event.result);
       }
       addMessage("tool", String(event.result ?? ""), {
@@ -357,8 +338,6 @@ export function ChatPanel() {
 
     if (event.type === "confirmation_required") {
       reasoningTraceId.current = "";
-      finishRunningSteps(true);
-      addTimelineStep(`需要确认: ${readableTool(String(event.tool_name ?? "工具"), event.args, ontology)}`);
       setPendingAction({
         kind: "confirmation",
         sessionId,
@@ -373,8 +352,6 @@ export function ChatPanel() {
 
     if (event.type === "question") {
       reasoningTraceId.current = "";
-      finishRunningSteps(true);
-      addTimelineStep("等待用户选择");
       const options = Array.isArray(event.options)
         ? event.options.map((option) => ({
           label: String((option as { label?: unknown }).label ?? ""),
@@ -397,7 +374,6 @@ export function ChatPanel() {
     }
 
     if (event.type === "hook_blocked") {
-      finishRunningSteps(false);
       addTrace("error", String(event.hook_event ?? "hook blocked"), event.reason ?? "");
       addMessage("system", `Hook 阻断: ${String(event.reason ?? "")}`, nextMessageFlow("notice"));
       setLoading("chat", false);
@@ -406,7 +382,6 @@ export function ChatPanel() {
 
     if (event.type === "done") {
       clearStreamTimeout();
-      finishRunningSteps(true);
       reasoningTraceId.current = "";
       assistantId.current = "";
       currentTurnId.current = "";
@@ -418,7 +393,6 @@ export function ChatPanel() {
 
     if ((event as Record<string, unknown>).type === "error") {
       clearStreamTimeout();
-      finishRunningSteps(false);
       setLoading("chat", false);
       assistantId.current = "";
       currentTurnId.current = "";
@@ -430,14 +404,12 @@ export function ChatPanel() {
     }
   }, [
     addMessage,
-    addTimelineStep,
     addTrace,
     appendAssistantText,
     appendTraceDetail,
     appendTraceEvent,
     clearStreamTimeout,
     ensureAssistantMessage,
-    finishRunningSteps,
     nextMessageFlow,
     ontology,
     sessionId,
@@ -452,7 +424,7 @@ export function ChatPanel() {
     setSessionId(stored);
     setInput("");
     setTurnCount(0);
-    setTimelineSteps([]);
+
     assistantId.current = "";
     reasoningTraceId.current = "";
     currentTurnId.current = "";
@@ -488,7 +460,7 @@ export function ChatPanel() {
     setSessionId(next);
     setInput("");
     setTurnCount(0);
-    setTimelineSteps([]);
+
     assistantId.current = "";
     reasoningTraceId.current = "";
     currentTurnId.current = "";
@@ -515,7 +487,7 @@ export function ChatPanel() {
     reasoningTraceId.current = "";
     currentTurnId.current = createClientId();
     messageSequence.current = 0;
-    setTimelineSteps([]);
+
     const nextTurn = turnCount + 1;
     setTurnCount(nextTurn);
     addTrace("turn", `Turn ${nextTurn}`, message);
@@ -553,7 +525,6 @@ export function ChatPanel() {
       const res = await api.confirm(currentDomain, pendingAction.sessionId, approved, answer);
       await consumeFollowup(res);
     } catch (error) {
-      finishRunningSteps(false);
       toast.error(error instanceof Error ? error.message : "确认操作失败");
     } finally {
       setLoading("chat", false);
@@ -607,7 +578,7 @@ export function ChatPanel() {
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [lastMessage?.id, lastMessageContent, loading, messages.length, pendingAction?.title, timelineSteps.length]);
+  }, [lastMessage?.id, lastMessageContent, loading, messages.length, pendingAction?.title]);
 
   return (
     <section className="chat-layout">
@@ -616,20 +587,15 @@ export function ChatPanel() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className={loading ? "status-dot" : "status-dot status-dot-muted"} />
-              <div className="panel-title">Agent Workspace</div>
+              <div className="panel-title">{ontology?.description?.split(/[。.]/)[0] || ontology?.name || "智能体对话"}</div>
               <Badge tone="green">{sessionId}</Badge>
             </div>
-            <div className="panel-subtitle truncate">对话、工具执行、确认流和会话历史</div>
           </div>
           <div className="flex items-center gap-2">
-            <Badge>{visibleMessages.length} 消息</Badge>
-            <Badge tone={traceEvents.length ? "blue" : "neutral"}>{traceEvents.length} Trace</Badge>
+            {loading ? <ProcessingHeaderStatus onStop={() => stopStream("用户停止了当前请求。")} /> : null}
             <button type="button" onClick={newChat} className="command-button">
               <ListRestart className="h-4 w-4" />
               新对话
-            </button>
-            <button type="button" onClick={clearMessages} title="只清空当前页面消息，不创建新会话" className="icon-button">
-              <Trash2 className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -664,24 +630,9 @@ export function ChatPanel() {
               {visibleMessages.map((message) => (
                 <MessageBubble message={message} key={message.id} />
               ))}
-              {loading ? <ProcessingBubble onStop={() => stopStream("用户停止了当前请求。")} /> : null}
             </div>
           )}
         </div>
-
-        {timelineSteps.length ? (
-          <div className="timeline-strip">
-            <div className="section-label mb-2">Agent 执行进度</div>
-            <div className="flex gap-2 overflow-auto">
-              {timelineSteps.map((step) => (
-                <div key={step.id} className={`timeline-item ${step.status === "done" ? "timeline-done" : step.status === "error" ? "timeline-error" : "timeline-running"}`}>
-                  <span className="truncate">{step.label}</span>
-                  <span className="ml-3 shrink-0">{step.status === "done" ? "✓" : step.status === "error" ? "✕" : "..."}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
 
         {pendingAction ? (
           <div className="border-t p-4" style={{ borderColor: "color-mix(in srgb, var(--warning) 50%, var(--line))", background: "var(--warning-soft)" }}>
@@ -716,22 +667,7 @@ export function ChatPanel() {
         ) : null}
 
         <form onSubmit={submit} className="composer">
-          {promptItems.length ? (
-            <div className="composer-prompts">
-              {promptItems.slice(0, 6).map((item) => (
-                <button
-                  key={`${item.group}-${item.prompt}`}
-                  type="button"
-                  disabled={!ontology}
-                  onClick={() => submit(undefined, item.prompt, { replaceRunning: true })}
-                  className="prompt-chip"
-                >
-                  <Sparkles className="h-3 w-3" />
-                  <span>{item.prompt}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <McpToolsMenu open={toolsOpen} onOpenChange={setToolsOpen} />
           {filteredPrompts.length ? (
             <div className="prompt-popover">
               {filteredPrompts.map((item, index) => (
@@ -752,54 +688,224 @@ export function ChatPanel() {
               ))}
             </div>
           ) : null}
-          <textarea
-            ref={inputRef}
-            className="control-input flex-1"
-            placeholder={ontology ? "输入问题... 输入 / 查看示例" : "先选择一个 domain"}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleInputKeyDown}
-          />
+          <div className="composer-input-shell">
+            <textarea
+              ref={inputRef}
+              className="composer-textarea"
+              placeholder={ontology ? "输入问题... 输入 / 查看示例" : "先选择一个 domain"}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={handleInputKeyDown}
+            />
+            <div className="composer-toolbar">
+              <button
+                type="button"
+                className={`tool-menu-button ${toolsOpen ? "tool-menu-button-active" : ""} tool-menu-button-${mcpStatus?.status ?? "offline"}`}
+                onClick={() => setToolsOpen((v) => !v)}
+                disabled={!ontology}
+                aria-label="MCP"
+                title="查看 MCP 工具"
+              >
+                <span className={`mcp-dot mcp-dot-${mcpStatus?.status ?? "offline"}`} />
+                <span>MCP</span>
+              </button>
+              <div className="composer-hint">{ontology ? "Enter 发送，Shift + Enter 换行，/ 查看示例" : "选择 domain 后可开始对话"}</div>
+            </div>
+          </div>
           <button
             type="submit"
             disabled={loading || !ontology || !input.trim()}
-            className="primary-button h-[46px]"
+            className="send-button"
+            aria-label="发送"
           >
             <Send className="h-4 w-4" />
-            发送
           </button>
         </form>
       </div>
 
       <aside className="console-panel assistant-panel">
-        <div className="panel-header">
-          <div className="flex items-center gap-2 panel-title">
-            <PanelRightOpen className="h-4 w-4" style={{ color: "var(--text-faint)" }} />
-            Assistant Panel
-          </div>
-          <div className="segmented">
-            <button type="button" onClick={() => setSidePanel("trace")} className={`segment-button ${sidePanel === "trace" ? "segment-button-active" : ""}`}>Trace</button>
-            <button type="button" onClick={() => setSidePanel("prompts")} className={`segment-button ${sidePanel === "prompts" ? "segment-button-active" : ""}`}>Prompts</button>
-          </div>
-        </div>
-        {sidePanel === "trace" ? (
-          <TracePanel events={traceEvents} onClear={clearTraceEvents} />
-        ) : (
-          <PromptPanel groups={promptGroups} disabled={!ontology} onSubmit={(prompt) => submit(undefined, prompt, { replaceRunning: true })} />
-        )}
+        <TracePanel events={traceEvents} onClear={clearTraceEvents} />
       </aside>
     </section>
   );
 }
+function McpToolsMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const ontology = useConsoleStore((state) => state.ontology);
+  const status = useConsoleStore((state) => state.mcpStatus);
+  const tools = useConsoleStore((state) => state.mcpTools);
+  const setSelectedMcpTool = useConsoleStore((state) => state.setSelectedMcpTool);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "read" | "write" | "confirm">("all");
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  const readCount = status?.read_only_count ?? tools.filter((tool) => tool.read_only).length;
+  const writeCount = status?.write_count ?? tools.filter((tool) => !tool.read_only).length;
+  const confirmCount = status?.requires_confirmation_count ?? tools.filter((tool) => tool.requires_confirmation).length;
+  const registeredCount = status?.tool_count ?? tools.length;
+  const statusText = mcpStatusLabel(status, registeredCount);
+  const online = status?.status === "online";
+  const visibleTools = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return tools.filter((tool) => {
+      if (filter === "read" && !tool.read_only) return false;
+      if (filter === "write" && tool.read_only) return false;
+      if (filter === "confirm" && !tool.requires_confirmation) return false;
+      if (!normalizedQuery) return true;
+      return [
+        tool.name,
+        tool.description,
+        tool.category
+      ].filter(Boolean).some((value) => String(value).toLowerCase().includes(normalizedQuery));
+    });
+  }, [filter, query, tools]);
+  const activeTool = useMemo(() => (
+    visibleTools.find((tool) => tool.name === selectedName) ?? visibleTools[0] ?? null
+  ), [visibleTools, selectedName]);
 
-function ProcessingBubble({ onStop }: { onStop: () => void }) {
+  useEffect(() => {
+    if (!visibleTools.length) {
+      if (selectedName) setSelectedName(null);
+      return;
+    }
+    if (!selectedName || !visibleTools.some((tool) => tool.name === selectedName)) {
+      setSelectedName(visibleTools[0].name);
+    }
+  }, [visibleTools, selectedName]);
+
+  function openMcpView() {
+    if (activeTool) setSelectedMcpTool(activeTool.name);
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "mcp");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+    window.dispatchEvent(new CustomEvent("oag-view-change", { detail: "mcp" }));
+    onOpenChange(false);
+  }
+
+  if (!open) return null;
+
   return (
-    <div className="message-row">
-      <div className="processing-card" role="status" aria-live="polite">
-        <span className="processing-dot" />
-        <span>正在处理请求</span>
-        <button type="button" className="processing-stop" onClick={onStop}>停止</button>
+    <div className="tool-menu-popover">
+      <div className="tool-menu-header">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text)" }}>
+            <ServerCog className="h-4 w-4" style={{ color: "var(--accent-strong)" }} />
+            MCP
+            <Badge tone={mcpStatusTone(status)}>{statusText}</Badge>
+          </div>
+          <div className="tool-menu-endpoint">
+            {status?.domain ?? ontology?.name ?? "-"} · {status?.transport ?? "streamable-http"} · {status?.endpoint ?? "未配置 endpoint"}
+          </div>
+        </div>
+        <button type="button" className="tool-detail-toggle" onClick={() => onOpenChange(false)}>关闭</button>
       </div>
+
+      {!online ? (
+        <div className="tool-menu-error">
+          {status?.error || "远程 MCP 未连接，启动 MCP server 后刷新。"}
+        </div>
+      ) : null}
+
+      <div className="tool-menu-controls">
+        <input
+          className="control-input"
+          placeholder="搜索 MCP 暴露的工具"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <div className="segmented">
+          {[
+            { id: "all" as const, label: "全部", count: registeredCount },
+            { id: "read" as const, label: "只读", count: readCount },
+            { id: "write" as const, label: "写入", count: writeCount },
+            { id: "confirm" as const, label: "需确认", count: confirmCount }
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setFilter(item.id)}
+              aria-label={`${item.label} ${item.count}`}
+              className={`segment-button ${filter === item.id ? "segment-button-active" : ""}`}
+            >
+              <span>{item.label}</span>
+              <span className="segment-count">{item.count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="tool-menu-body">
+        <div className="tool-menu-list">
+          {visibleTools.length ? visibleTools.map((tool) => (
+            <button
+              type="button"
+              key={tool.name}
+              className={`tool-menu-item ${activeTool?.name === tool.name ? "tool-menu-item-active" : ""}`}
+              onClick={() => setSelectedName(tool.name)}
+            >
+              <div className="min-w-0">
+                <div className="truncate text-xs font-semibold" style={{ color: "var(--text)" }}>{tool.name}</div>
+                <div className="line-clamp-2 text-[11px]" style={{ color: "var(--text-faint)" }}>{tool.description || tool.category || "tool"}</div>
+              </div>
+              <div className="flex shrink-0 gap-1">
+                {tool.requires_confirmation ? <Badge tone="amber">确认</Badge> : null}
+                <Badge tone={tool.read_only ? "green" : "red"}>{tool.read_only ? "读" : "写"}</Badge>
+              </div>
+            </button>
+          )) : (
+            <div className="tool-menu-empty">{online ? "没有匹配的 MCP 工具。" : "远程 MCP 未连接，当前没有可用工具。"}</div>
+          )}
+        </div>
+
+        <div className="tool-menu-detail-panel">
+          {activeTool ? (
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="section-label mb-1">工具详情</div>
+                  <div className="truncate text-sm font-semibold" style={{ color: "var(--text)" }}>{activeTool.name}</div>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  {activeTool.requires_confirmation ? <Badge tone="amber">确认</Badge> : null}
+                  <Badge tone={activeTool.read_only ? "green" : "red"}>{activeTool.read_only ? "只读" : "写入"}</Badge>
+                </div>
+              </div>
+              <p className="tool-menu-detail-desc">{activeTool.description || "没有描述"}</p>
+              <div className="tool-menu-detail-grid">
+                <InfoPill label="分类" value={activeTool.category || "tool"} />
+                <InfoPill label="危险操作" value={activeTool.policy?.destructive ? "是" : "否"} />
+              </div>
+              <div className="section-label mt-3 mb-1">Input Schema</div>
+              <pre className="json-block tool-menu-schema">{stringify(activeTool.input_schema ?? activeTool.parameters ?? {})}</pre>
+              <div className="section-label mt-3 mb-1">Policy</div>
+              <pre className="json-block tool-menu-policy">{stringify(activeTool.policy ?? {})}</pre>
+            </div>
+          ) : (
+            <div className="tool-menu-empty">{online ? "选择左侧工具后查看详情。" : "连接远程 MCP 后可查看工具详情。"}</div>
+          )}
+        </div>
+      </div>
+
+      <button type="button" className="command-button tool-menu-manage-button" onClick={openMcpView}>
+        在 MCP 管理页查看完整详情
+      </button>
+    </div>
+  );
+}
+
+function InfoPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="tool-menu-info-pill">
+      <div className="text-[10px]" style={{ color: "var(--text-faint)" }}>{label}</div>
+      <div className="truncate text-xs font-semibold" style={{ color: "var(--text)" }}>{value}</div>
+    </div>
+  );
+}
+
+function ProcessingHeaderStatus({ onStop }: { onStop: () => void }) {
+  return (
+    <div className="processing-header-status" role="status" aria-live="polite">
+      <span className="processing-dot" />
+      <span>正在处理</span>
+      <button type="button" className="processing-stop" onClick={onStop}>停止</button>
     </div>
   );
 }
@@ -945,39 +1051,6 @@ function TraceItem({ event }: { event: TraceEvent }) {
           {isLong ? <div className="mt-1 flex items-center gap-1 text-[11px]" style={{ color: "var(--text-faint)" }}><ChevronDown className="h-3 w-3" />{expanded ? "收起" : "展开"}</div> : null}
         </button>
       ) : null}
-    </div>
-  );
-}
-
-function PromptPanel({ groups, disabled, onSubmit }: { groups: Array<[string, PromptItem[]]>; disabled: boolean; onSubmit: (prompt: string) => void }) {
-  return (
-    <div className="min-h-0 flex-1 overflow-auto p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text)" }}>
-        <Sparkles className="h-4 w-4" style={{ color: "var(--accent-strong)" }} />
-        示例问题
-      </div>
-      <div className="grid gap-3">
-        {groups.length ? groups.map(([group, items]) => (
-          <div key={group} className="space-y-2">
-            <div className="section-label">{group}</div>
-            {items.map((item) => (
-              <button
-                type="button"
-                key={`${group}-${item.prompt}`}
-                disabled={disabled}
-                onClick={() => onSubmit(item.prompt)}
-                className="resource-card w-full"
-              >
-                <div className="flex items-start gap-2">
-                  <Copy className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: "var(--text-faint)" }} />
-                  <span className="text-xs leading-5" style={{ color: "var(--text-muted)" }}>{item.prompt}</span>
-                </div>
-                {item.desc ? <div className="mt-1 pl-5 text-[11px]" style={{ color: "var(--text-faint)" }}>{item.desc}</div> : null}
-              </button>
-            ))}
-          </div>
-        )) : <div className="text-xs leading-5" style={{ color: "var(--text-faint)" }}>当前领域没有 prompts.json 示例。</div>}
-      </div>
     </div>
   );
 }

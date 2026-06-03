@@ -40,8 +40,20 @@ describe("ChatPanel", () => {
         boot: false,
         schema: false,
         chat: false,
-        query: false
-      }
+        query: false,
+        mcp: false
+      },
+      mcpStatus: {
+        status: "online",
+        domain: "test",
+        endpoint: "http://127.0.0.1:8765/mcp",
+        transport: "streamable-http",
+        tool_count: 3,
+        read_only_count: 2,
+        write_count: 1,
+        requires_confirmation_count: 1
+      },
+      mcpTools: []
     });
     Object.defineProperty(globalThis, "crypto", {
       configurable: true,
@@ -88,10 +100,55 @@ describe("ChatPanel", () => {
   test("renders enterprise chat workspace regions", () => {
     render(<ChatPanel />);
 
-    expect(screen.getByText("Agent Workspace")).toBeInTheDocument();
-    expect(screen.getByText("Assistant Panel")).toBeInTheDocument();
+    expect(screen.getByText("智能体对话")).toBeInTheDocument();
+    expect(screen.getByText("辅助面板")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "MCP 在线 · 3" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Trace" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Prompts" })).toBeInTheDocument();
+  });
+
+  test("opens MCP tools from the composer without adding chat content", async () => {
+    useConsoleStore.setState({
+      mcpTools: [
+        { name: "query", description: "查询对象", read_only: true },
+        { name: "mutate", description: "写入对象", read_only: false, requires_confirmation: true }
+      ]
+    });
+
+    render(<ChatPanel />);
+
+    await userEvent.click(screen.getByRole("button", { name: "MCP 在线 · 3" }));
+
+    expect(screen.getByText("远程 MCP")).toBeInTheDocument();
+    expect(screen.getByText("streamable-http · http://127.0.0.1:8765/mcp")).toBeInTheDocument();
+    expect(screen.getAllByText("query").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("mutate")).toBeInTheDocument();
+    expect(screen.getByText("工具详情")).toBeInTheDocument();
+    expect(useConsoleStore.getState().messages).toHaveLength(0);
+  });
+
+  test("shows disconnected MCP state without local tools", async () => {
+    useConsoleStore.setState({
+      mcpStatus: {
+        status: "offline",
+        domain: "test",
+        endpoint: "http://127.0.0.1:8765/mcp",
+        transport: "streamable-http",
+        tool_count: 0,
+        read_only_count: 0,
+        write_count: 0,
+        requires_confirmation_count: 0,
+        error: "connection refused"
+      },
+      mcpTools: []
+    });
+
+    render(<ChatPanel />);
+
+    await userEvent.click(screen.getByRole("button", { name: "MCP 未连接" }));
+
+    expect(screen.getByText("connection refused")).toBeInTheDocument();
+    expect(screen.getByText("远程 MCP 未连接，当前没有可用工具。")).toBeInTheDocument();
   });
 
   test("submits an empty-state prompt and shows processing feedback", async () => {
@@ -110,7 +167,7 @@ describe("ChatPanel", () => {
       })
     ]));
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(screen.getByRole("status")).toHaveTextContent("正在处理请求");
+    expect(screen.getByRole("status")).toHaveTextContent("正在处理");
   });
 
   test("clears processing feedback when the stream sends done", async () => {
@@ -119,7 +176,7 @@ describe("ChatPanel", () => {
     await userEvent.type(screen.getByPlaceholderText("输入问题... 输入 / 查看示例"), "hello");
     await userEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(screen.getByRole("status")).toHaveTextContent("正在处理请求");
+    expect(screen.getByRole("status")).toHaveTextContent("正在处理");
 
     act(() => {
       FakeEventSource.instances[0].emit("done", {});

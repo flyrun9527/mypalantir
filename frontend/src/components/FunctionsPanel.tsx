@@ -42,19 +42,13 @@ export function FunctionsPanel() {
   const ontology = useConsoleStore((state) => state.ontology);
   const selectedFunction = useConsoleStore((state) => state.selectedFunction);
   const setSelectedFunction = useConsoleStore((state) => state.setSelectedFunction);
-  const registryFunctions = useConsoleStore((state) => state.registryFunctions);
   const [args, setArgs] = useState<Record<string, unknown>>({});
   const [result, setResult] = useState<FunctionResult>({ status: "idle" });
   const [openRaw, setOpenRaw] = useState(false);
 
   const functions = useMemo(() => {
-    const merged = new Map<string, FunctionDef>();
-    for (const [name, def] of Object.entries(ontology?.functions ?? {})) merged.set(name, def);
-    for (const [name, raw] of Object.entries(registryFunctions ?? {})) {
-      if (!merged.has(name)) merged.set(name, (raw && typeof raw === "object" ? raw : {}) as FunctionDef);
-    }
-    return Array.from(merged.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [ontology, registryFunctions]);
+    return Object.entries(ontology?.functions ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  }, [ontology]);
 
   const activeName = selectedFunction ?? functions[0]?.[0] ?? null;
   const activeDef = activeName ? functions.find(([name]) => name === activeName)?.[1] ?? null : null;
@@ -73,11 +67,11 @@ export function FunctionsPanel() {
     if (!activeName) return;
     setResult({ status: "running" });
     try {
-      const output = await api.callFunction(currentDomain, activeName, args);
-      setResult({ status: "success", value: output });
-      toast.success("函数调用完成");
+      const output = await api.callMcpTool(currentDomain, activeName, args);
+      setResult({ status: "success", value: output.result });
+      toast.success("MCP 工具调用完成");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "函数调用失败";
+      const message = error instanceof Error ? error.message : "MCP 工具调用失败";
       setResult({ status: "error", value: message });
       toast.error(message);
     }
@@ -93,7 +87,7 @@ export function FunctionsPanel() {
     });
   }
 
-  if (!ontology) return <EmptyState title="未加载函数" detail="选择 domain 后会展示 ontology 和 registry 中可调用的函数。" />;
+  if (!ontology) return <EmptyState title="未加载函数" detail="选择 domain 后会展示 ontology 中声明、由 MCP 暴露的函数。" />;
 
   return (
     <section className="grid h-full min-h-0 grid-cols-1 gap-4 xl:grid-cols-[392px_minmax(0,1fr)]">
@@ -104,7 +98,7 @@ export function FunctionsPanel() {
               <SquareFunction className="h-4 w-4" style={{ color: "var(--purple)" }} />
               函数目录
             </div>
-            <p className="panel-subtitle">业务函数、查询函数、写操作和隐藏 registry 函数。</p>
+            <p className="panel-subtitle">函数执行统一通过远程 MCP 工具调用。</p>
           </div>
           <Badge tone="purple">{functions.length}</Badge>
         </div>
@@ -205,7 +199,10 @@ export function FunctionsPanel() {
 
         <aside className="console-panel min-h-0 overflow-auto p-4">
           <div className="mb-3 flex items-center justify-between">
-            <div className="panel-title">调用调试</div>
+            <div>
+              <div className="panel-title">MCP 调用调试</div>
+              <div className="panel-subtitle">调用当前函数对应的远程 MCP tool。</div>
+            </div>
             <Badge tone={result.status === "error" ? "red" : result.status === "success" ? "green" : "neutral"}>{result.status}</Badge>
           </div>
           <div className="section-label mb-2">Args JSON</div>

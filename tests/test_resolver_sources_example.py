@@ -6,9 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from oag.harness import Harness, HarnessConfig
-from oag.ontology.loader import load_domain
-from oag.ontology.data_executor import DataExecutor
+from oag_ontology.loader import load_domain
+from oag_ontology.data_executor import DataExecutor
 
 
 class DummyClient:
@@ -49,25 +48,18 @@ def test_resolver_sources_example_loads_and_queries():
 
 def test_resolver_sources_example_query_links_and_search():
     ontology, store, registry = load_domain(DOMAIN_DIR)
-    harness = Harness(
-        ontology,
-        store,
-        registry,
-        DummyClient(),
-        "dummy-model",
-        HarnessConfig(enable_write_confirmation=False),
-    )
+    data = DataExecutor(store, registry)
 
-    linked = json.loads(harness.execute_tool("query_links", {
+    linked = json.loads(data.execute("query_links", {
         "source_type": "CustomerProfile",
         "source_id": "C001",
         "link_name": "customer_has_accounts",
-    }).content)
-    search = json.loads(harness.execute_tool("search", {
+    }))
+    search = json.loads(data.execute("search", {
         "keyword": "Acme",
         "object_types": ["CustomerProfile"],
-    }).content)
-    note = json.loads(harness.execute_tool("mutate", {
+    }))
+    note = json.loads(data.execute("mutate", {
         "operation": "create",
         "object_type": "InvestigationNote",
         "data": {
@@ -75,7 +67,7 @@ def test_resolver_sources_example_query_links_and_search():
             "customer_id": "C001",
             "content": "Follow up with account owner.",
         },
-    }).content)
+    }))
 
     assert [row["account_id"] for row in linked] == ["A100", "A101"]
     assert search[0]["customer_id"] == "C001"

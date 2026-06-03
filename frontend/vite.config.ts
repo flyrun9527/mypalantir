@@ -14,7 +14,8 @@ export default defineConfig({
       "/function": "http://localhost:18000",
       "/agent": "http://localhost:18000",
       "/audit": "http://localhost:18000",
-      "/prompts": "http://localhost:18000"
+      "/prompts": "http://localhost:18000",
+      "/mcp": "http://localhost:18000"
     }
   }
 });

@@ -9,10 +9,11 @@ import { DataPanel } from "./components/DataPanel";
 import { EmptyState } from "./components/EmptyState";
 import { FunctionsPanel } from "./components/FunctionsPanel";
 import { Header } from "./components/Header";
+import { McpPanel } from "./components/McpPanel";
 import { ModelPanel } from "./components/ModelPanel";
 import { WorkflowPanel } from "./components/WorkflowPanel";
 
-const views = new Set(["chat", "model", "functions", "data", "workflows"]);
+const views = new Set(["chat", "model", "functions", "data", "workflows", "mcp"]);
 
 function getViewFromUrl() {
   const view = new URLSearchParams(window.location.search).get("view");
@@ -30,40 +31,101 @@ export default function App() {
   const setDomains = useConsoleStore((state) => state.setDomains);
   const setCurrentDomain = useConsoleStore((state) => state.setCurrentDomain);
   const setOntology = useConsoleStore((state) => state.setOntology);
-  const setRegistryFunctions = useConsoleStore((state) => state.setRegistryFunctions);
   const setPrompts = useConsoleStore((state) => state.setPrompts);
+  const setMcpStatus = useConsoleStore((state) => state.setMcpStatus);
+  const setMcpTools = useConsoleStore((state) => state.setMcpTools);
+  const setSelectedMcpTool = useConsoleStore((state) => state.setSelectedMcpTool);
+  const setMcpCallResult = useConsoleStore((state) => state.setMcpCallResult);
+  const setMcpError = useConsoleStore((state) => state.setMcpError);
+  const setAgentTools = useConsoleStore((state) => state.setAgentTools);
   const setSelectedObject = useConsoleStore((state) => state.setSelectedObject);
   const setSelectedFunction = useConsoleStore((state) => state.setSelectedFunction);
   const setQueryRows = useConsoleStore((state) => state.setQueryRows);
   const setLoading = useConsoleStore((state) => state.setLoading);
 
+  const loadAgentTools = useCallback(async (domain: string | null) => {
+    try {
+      const payload = await api.getAgentTools(domain);
+      setAgentTools(payload.agent_tools, payload.mcp_tool_count);
+    } catch {
+      setAgentTools([], 0);
+    }
+  }, [setAgentTools]);
+
+  const loadMcp = useCallback(async (domain: string | null) => {
+    setLoading("mcp", true);
+    setMcpStatus({
+      status: "loading",
+      domain,
+      tool_count: 0,
+      read_only_count: 0,
+      write_count: 0,
+      requires_confirmation_count: 0
+    });
+    setMcpTools([]);
+    setSelectedMcpTool(null);
+    setMcpCallResult(null);
+    setMcpError(null);
+    try {
+      const status = await api.getMcpStatus(domain);
+      setMcpStatus(status);
+      if (status.status !== "online") {
+        setMcpTools([]);
+        setSelectedMcpTool(null);
+        setMcpError(status.error ?? "远程 MCP 未连接");
+        return;
+      }
+      const toolPayload = await api.getMcpTools(domain);
+      setMcpTools(toolPayload.tools);
+      setSelectedMcpTool(toolPayload.tools[0]?.name ?? null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "加载 MCP 状态失败";
+      setMcpStatus({
+        status: "error",
+        domain,
+        tool_count: 0,
+        read_only_count: 0,
+        write_count: 0,
+        requires_confirmation_count: 0,
+        error: message
+      });
+      setMcpError(message);
+    } finally {
+      setLoading("mcp", false);
+    }
+  }, [setLoading, setMcpCallResult, setMcpError, setMcpStatus, setMcpTools, setSelectedMcpTool]);
+
   const loadDomain = useCallback(async (domain: string | null) => {
     setCurrentDomain(domain);
     setLoading("schema", true);
     setOntology(null);
-    setRegistryFunctions({});
     setPrompts([]);
+    setMcpStatus(null);
+    setMcpTools([]);
+    setSelectedMcpTool(null);
+    setMcpCallResult(null);
+    setMcpError(null);
     setSelectedObject(null);
     setSelectedFunction(null);
     setQueryRows([]);
     try {
-      const [schema, registryFunctions, prompts] = await Promise.all([
+      const [schema, prompts] = await Promise.all([
         api.getSchema(domain),
-        api.getRegistryFunctions(domain),
         api.getPrompts(domain).catch(() => [])
       ]);
       setOntology(schema);
-      setRegistryFunctions(registryFunctions);
       setPrompts(prompts);
       setSelectedObject(Object.keys(schema.objects ?? {})[0] ?? null);
       setSelectedFunction(Object.keys(schema.functions ?? {})[0] ?? null);
+      void loadMcp(domain);
+      void loadAgentTools(domain);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "加载 domain 失败");
     } finally {
       setLoading("schema", false);
       setLoading("boot", false);
     }
-  }, [setCurrentDomain, setLoading, setOntology, setPrompts, setQueryRows, setRegistryFunctions, setSelectedFunction, setSelectedObject]);
+  }, [loadAgentTools, loadMcp, setCurrentDomain, setLoading, setMcpCallResult, setMcpError, setMcpStatus, setMcpTools, setOntology, setPrompts, setQueryRows, setSelectedFunction, setSelectedMcpTool, setSelectedObject]);
 
   const boot = useCallback(async () => {
     setLoading("boot", true);
@@ -85,14 +147,20 @@ export default function App() {
       const domain = (event as CustomEvent<string>).detail;
       loadDomain(domain);
     };
+    const viewHandler = (event: Event) => {
+      const view = (event as CustomEvent<string>).detail;
+      if (views.has(view)) setActiveView(view);
+    };
     const popstate = () => {
       setActiveView(getViewFromUrl());
       loadDomain(getDomainFromPath());
     };
     window.addEventListener("oag-domain-change", handler);
+    window.addEventListener("oag-view-change", viewHandler);
     window.addEventListener("popstate", popstate);
     return () => {
       window.removeEventListener("oag-domain-change", handler);
+      window.removeEventListener("oag-view-change", viewHandler);
       window.removeEventListener("popstate", popstate);
     };
   }, [boot, loadDomain]);
@@ -122,7 +190,7 @@ export default function App() {
           />
           <div className="content-stage">
             {!ontology ? (
-              <EmptyState title="请选择 domain" detail="在顶部选择业务域后，可以查看本体模型、函数、规则、数据和 Agent 对话。" />
+              <EmptyState title="请选择 domain" detail="在顶部选择业务域后，可以进入对话、MCP服务、本体、数据、函数和流程视图。" />
             ) : activeView === "chat" ? (
               <ChatPanel />
             ) : activeView === "model" ? (
@@ -131,6 +199,8 @@ export default function App() {
               <FunctionsPanel />
             ) : activeView === "data" ? (
               <DataPanel />
+            ) : activeView === "mcp" ? (
+              <McpPanel onRefresh={() => loadMcp(currentDomain)} />
             ) : (
               <WorkflowPanel />
             )}

@@ -168,3 +168,50 @@ export type GraphLink = {
 };
 
 export type QueryRow = Record<string, unknown>;
+
+export type McpStatusValue = "online" | "offline" | "loading" | "error";
+
+export type McpStatus = {
+  status: McpStatusValue;
+  domain?: string | null;
+  endpoint?: string;
+  transport?: string;
+  tool_count: number;
+  read_only_count: number;
+  write_count: number;
+  requires_confirmation_count: number;
+  error?: string;
+};
+
+export type McpTool = {
+  name: string;
+  description?: string;
+  input_schema?: Record<string, unknown>;
+  parameters?: Record<string, unknown>;
+  category?: string;
+  read_only?: boolean;
+  requires_confirmation?: boolean;
+  policy?: Record<string, unknown>;
+};
+
+export type McpCallResult = {
+  domain: string;
+  name: string;
+  result: unknown;
+  raw: string;
+};
+
+export type AgentTool = {
+  name: string;
+  description?: string;
+  input_schema?: Record<string, unknown>;
+  category?: string;
+  read_only?: boolean;
+  requires_confirmation?: boolean;
+  policy?: Record<string, unknown>;
+};
+
+export type AgentToolsPayload = {
+  agent_tools: AgentTool[];
+  mcp_tool_count: number;
+};

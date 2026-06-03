@@ -33,13 +33,14 @@ type GraphForce = ((alpha: number) => void) & {
 };
 
 const legendKinds = ["entity", "rule_table", "lookup_table", "config"];
-const graphHeight = 500;
+const defaultGraphHeight = 500;
 const defaultGraphWidth = 720;
 
 export function OntologyGraph({ ontology, selectedObject, onSelectObject }: OntologyGraphProps) {
   const graphRef = useRef<ForceGraphMethods<GraphNode, OntologyGraphLink>>();
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const [graphWidth, setGraphWidth] = useState(defaultGraphWidth);
+  const [graphHeight, setGraphHeight] = useState(defaultGraphHeight);
   const graph = useMemo(() => buildRelationshipGraphModel(ontology, selectedObject), [ontology, selectedObject]);
   const forceGraph = useMemo(() => seedGraphPositions(graph, selectedObject), [graph, selectedObject]);
   const relationState = useMemo(
@@ -54,8 +55,12 @@ export function OntologyGraph({ ontology, selectedObject, onSelectObject }: Onto
     if (!container || typeof ResizeObserver === "undefined") return;
 
     const observer = new ResizeObserver((entries) => {
-      const width = Math.round(entries[0]?.contentRect.width ?? 0);
+      const rect = entries[0]?.contentRect;
+      if (!rect) return;
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
       if (width > 0) setGraphWidth(width);
+      if (height > 0) setGraphHeight(height);
     });
     observer.observe(container);
     return () => observer.disconnect();

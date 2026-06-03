@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from oag.ontology.schema import (
+from oag_ontology.schema import (
     ObjectSourceDef,
     Ontology,
     ObjectTypeDef,
@@ -14,12 +14,10 @@ from oag.ontology.schema import (
     WorkflowDef,
     WorkflowStep,
 )
-from oag.ontology.registry import FunctionRegistry
-from oag.ontology.repository import ObjectRepository
-from oag.harness import Harness, HarnessConfig
-from oag.ontology.data_executor import DataExecutor
-from oag.ontology.runtime import OntologyRuntime
-from oag.tools.registry import ToolRegistry
+from oag_ontology.registry import FunctionRegistry
+from oag_ontology.repository import ObjectRepository
+from oag_ontology.data_executor import DataExecutor
+from oag_ontology.tool_service import OntologyToolService
 
 
 def _make_ontology():
@@ -159,26 +157,21 @@ def _make_repository(ontology):
 
 
 class _CombinedExecutor:
-    """Test helper combining OntologyRuntime + DataExecutor via ToolRegistry."""
+    """Test helper combining OntologyToolService + DataExecutor."""
     def __init__(self, ontology, repository, registry):
         self.repository = repository
-        self.ont = OntologyRuntime(ontology, registry, self.repository)
+        self.service = OntologyToolService(ontology, registry, self.repository)
         self.data = DataExecutor(self.repository, registry)
-        self.tools = ToolRegistry()
-        self.ont.register_tools(self.tools, self.data)
+        self.tools = self.service.tools
 
     def execute(self, name, args):
         tool = self.tools.get(name)
         if tool:
-            if name == "mutate":
-                pre_check = self.ont.validate_mutate(args)
-                if pre_check:
-                    return pre_check
-            return tool.handler(args)
+            return self.service.call_tool(name, args)
         return self.data.execute(name, args)
 
     def validate_mutate(self, args):
-        return self.ont.validate_mutate(args)
+        return self.service.validate_mutate(args)
 
     def build_tools(self):
         return self.tools.build_tools()

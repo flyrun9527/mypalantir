@@ -1,5 +1,5 @@
 import { domainBase } from "./domain";
-import type { ChatMessage, DomainSummary, Ontology, QueryRow, StreamEvent } from "../types/oag";
+import type { AgentToolsPayload, ChatMessage, DomainSummary, McpCallResult, McpStatus, McpTool, Ontology, StreamEvent } from "../types/oag";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -29,30 +29,27 @@ export const api = {
     return requestJson<Ontology>(`${domainBase(domain)}/schema`);
   },
 
-  getRegistryFunctions(domain: string | null) {
-    return requestJson<Record<string, unknown>>(`${domainBase(domain)}/schema/functions`);
-  },
-
-  queryObject(domain: string | null, objectType: string, limit?: number, filters?: Record<string, unknown>) {
-    return requestJson<QueryRow[]>(`${domainBase(domain)}/query`, {
-      method: "POST",
-      body: JSON.stringify({
-        object_type: objectType,
-        ...(limit == null ? {} : { limit }),
-        ...(filters ? { filters } : {})
-      })
-    });
-  },
-
-  callFunction(domain: string | null, name: string, args: Record<string, unknown>) {
-    return requestJson<unknown>(`${domainBase(domain)}/function/${encodeURIComponent(name)}`, {
-      method: "POST",
-      body: JSON.stringify(args)
-    });
-  },
-
   getAudit(domain: string | null) {
     return requestJson<unknown[]>(`${domainBase(domain)}/audit`);
+  },
+
+  getMcpStatus(domain: string | null) {
+    return requestJson<McpStatus>(`${domainBase(domain)}/mcp/status`);
+  },
+
+  getMcpTools(domain: string | null) {
+    return requestJson<{ domain: string; tools: McpTool[] }>(`${domainBase(domain)}/mcp/tools`);
+  },
+
+  callMcpTool(domain: string | null, name: string, arguments_: Record<string, unknown>) {
+    return requestJson<McpCallResult>(`${domainBase(domain)}/mcp/call`, {
+      method: "POST",
+      body: JSON.stringify({ name, arguments: arguments_ })
+    });
+  },
+
+  getAgentTools(domain: string | null) {
+    return requestJson<AgentToolsPayload>(`${domainBase(domain)}/agent/tools`);
   },
 
   getHistory(domain: string | null, sessionId: string) {

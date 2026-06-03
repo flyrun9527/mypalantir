@@ -1,13 +1,19 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import type { ChatMessage, DomainSummary, Ontology, PendingAction, QueryRow, TraceEvent } from "../types/oag";
+import type { AgentTool, ChatMessage, DomainSummary, McpCallResult, McpStatus, McpTool, Ontology, PendingAction, QueryRow, TraceEvent } from "../types/oag";
 
 type ConsoleState = {
   domains: DomainSummary[];
   currentDomain: string | null;
   ontology: Ontology | null;
-  registryFunctions: Record<string, unknown>;
   prompts: unknown[];
+  agentTools: AgentTool[];
+  agentToolsMcpCount: number;
+  mcpStatus: McpStatus | null;
+  mcpTools: McpTool[];
+  selectedMcpTool: string | null;
+  mcpCallResult: McpCallResult | null;
+  mcpError: string | null;
   selectedObject: string | null;
   selectedFunction: string | null;
   queryRows: QueryRow[];
@@ -19,12 +25,18 @@ type ConsoleState = {
     schema: boolean;
     chat: boolean;
     query: boolean;
+    mcp: boolean;
   };
   setDomains: (domains: DomainSummary[]) => void;
   setCurrentDomain: (domain: string | null) => void;
   setOntology: (ontology: Ontology | null) => void;
-  setRegistryFunctions: (functions: Record<string, unknown>) => void;
   setPrompts: (prompts: unknown[]) => void;
+  setAgentTools: (tools: AgentTool[], mcpCount: number) => void;
+  setMcpStatus: (status: McpStatus | null) => void;
+  setMcpTools: (tools: McpTool[]) => void;
+  setSelectedMcpTool: (name: string | null) => void;
+  setMcpCallResult: (result: McpCallResult | null) => void;
+  setMcpError: (error: string | null) => void;
   setSelectedObject: (name: string | null) => void;
   setSelectedFunction: (name: string | null) => void;
   setQueryRows: (rows: QueryRow[]) => void;
@@ -44,8 +56,14 @@ export const useConsoleStore = create<ConsoleState>()(
     domains: [],
     currentDomain: null,
     ontology: null,
-    registryFunctions: {},
     prompts: [],
+    agentTools: [],
+    agentToolsMcpCount: 0,
+    mcpStatus: null,
+    mcpTools: [],
+    selectedMcpTool: null,
+    mcpCallResult: null,
+    mcpError: null,
     selectedObject: null,
     selectedFunction: null,
     queryRows: [],
@@ -56,7 +74,8 @@ export const useConsoleStore = create<ConsoleState>()(
       boot: true,
       schema: false,
       chat: false,
-      query: false
+      query: false,
+      mcp: false
     },
     setDomains: (domains) => set((state) => {
       state.domains = domains;
@@ -67,11 +86,27 @@ export const useConsoleStore = create<ConsoleState>()(
     setOntology: (ontology) => set((state) => {
       state.ontology = ontology;
     }),
-    setRegistryFunctions: (functions) => set((state) => {
-      state.registryFunctions = functions;
-    }),
     setPrompts: (prompts) => set((state) => {
       state.prompts = prompts;
+    }),
+    setAgentTools: (tools, mcpCount) => set((state) => {
+      state.agentTools = tools;
+      state.agentToolsMcpCount = mcpCount;
+    }),
+    setMcpStatus: (status) => set((state) => {
+      state.mcpStatus = status;
+    }),
+    setMcpTools: (tools) => set((state) => {
+      state.mcpTools = tools;
+    }),
+    setSelectedMcpTool: (name) => set((state) => {
+      state.selectedMcpTool = name;
+    }),
+    setMcpCallResult: (result) => set((state) => {
+      state.mcpCallResult = result;
+    }),
+    setMcpError: (error) => set((state) => {
+      state.mcpError = error;
     }),
     setSelectedObject: (name) => set((state) => {
       state.selectedObject = name;

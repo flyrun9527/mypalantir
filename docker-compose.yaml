@@ -1,0 +1,13 @@
+services:
+  oag:
+    build: .
+    ports:
+      - "8000:8000"
+      - "8765:8765"
+    volumes:
+      - ./domains:/app/domains:ro
+    env_file: .env
+    environment:
+      OAG_MCP_BASE_URL: http://127.0.0.1:8765
+      OAG_MCP_TRANSPORT: streamable-http
+    restart: unless-stopped
