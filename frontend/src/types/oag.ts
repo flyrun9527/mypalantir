@@ -201,6 +201,12 @@ export type McpCallResult = {
   raw: string;
 };
 
+export type SessionInfo = {
+  session_id: string;
+  updated_at: string;
+  preview: string;
+};
+
 export type AgentTool = {
   name: string;
   description?: string;

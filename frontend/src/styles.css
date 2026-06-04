@@ -811,8 +811,134 @@ code {
   flex-direction: column;
 }
 
+.chat-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.session-sidebar {
+  display: flex;
+  width: 240px;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.session-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.session-sidebar-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.session-item {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  padding: 4px;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+
+.session-item + .session-item {
+  margin-top: 2px;
+}
+
+.session-item:hover {
+  background: var(--surface-muted);
+  border-color: var(--line-soft);
+}
+
+.session-item-active {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  background: var(--accent-soft);
+}
+
+.session-item-body {
+  flex: 1;
+  min-width: 0;
+  padding: 6px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+}
+
+.session-item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 100ms ease, color 100ms ease, background 100ms ease;
+}
+
+.session-item:hover .session-item-delete {
+  opacity: 1;
+}
+
+.session-item-delete:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.session-item-preview {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.session-item-active .session-item-preview {
+  color: var(--accent-strong);
+}
+
+.session-item-meta {
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.session-sidebar-empty {
+  padding: 16px 8px;
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+.command-button-active {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
 .message-scroll {
   min-height: 0;
+  min-width: 0;
   flex: 1;
   overflow: auto;
   background: var(--bg-elevated);
@@ -1613,6 +1739,10 @@ code {
 }
 
 @media (max-width: 860px) {
+  .session-sidebar {
+    width: 200px;
+  }
+
   .topbar {
     height: auto;
     min-height: 64px;

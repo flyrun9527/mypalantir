@@ -3,7 +3,10 @@ import {
   Check,
   ChevronDown,
   Eraser,
+  History,
   ListRestart,
+  MessageSquare,
+  Trash2,
   Send,
   UserRound,
   Wrench,
@@ -18,7 +21,7 @@ import { api, parseSseFrames } from "../lib/api";
 import { formatTime, stringify } from "../lib/format";
 import { createClientId } from "../lib/id";
 import { useConsoleStore } from "../store/useConsoleStore";
-import type { ChatMessage, ChatPhase, McpStatus, Ontology, StreamEvent, TraceEvent, TraceTone } from "../types/oag";
+import type { ChatMessage, ChatPhase, McpStatus, Ontology, SessionInfo, StreamEvent, TraceEvent, TraceTone } from "../types/oag";
 import { Badge } from "./Badge";
 import { EmptyState } from "./EmptyState";
 
@@ -194,6 +197,8 @@ export function ChatPanel() {
   const appendTraceEvent = useConsoleStore((state) => state.appendTraceEvent);
   const appendTraceDetail = useConsoleStore((state) => state.appendTraceDetail);
   const clearTraceEvents = useConsoleStore((state) => state.clearTraceEvents);
+  const sessions = useConsoleStore((state) => state.sessions);
+  const setSessions = useConsoleStore((state) => state.setSessions);
   const setPendingAction = useConsoleStore((state) => state.setPendingAction);
   const setLoading = useConsoleStore((state) => state.setLoading);
   const loading = useConsoleStore((state) => state.loading.chat);
@@ -202,6 +207,7 @@ export function ChatPanel() {
   const [turnCount, setTurnCount] = useState(0);
   const [activePromptIndex, setActivePromptIndex] = useState(0);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const assistantId = useRef<string>("");
   const reasoningTraceId = useRef<string>("");
   const currentTurnId = useRef<string>("");
@@ -210,6 +216,7 @@ export function ChatPanel() {
   const streamTimeoutRef = useRef<number | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
+  const refreshSessionsRef = useRef<() => void>(() => undefined);
 
   const promptItems = useMemo(() => normalizePromptItems(prompts), [prompts]);
   const filteredPrompts = useMemo(() => {
@@ -388,6 +395,7 @@ export function ChatPanel() {
       messageSequence.current = 0;
       streamRef.current = null;
       setLoading("chat", false);
+      refreshSessionsRef.current();
       return;
     }
 
@@ -416,6 +424,12 @@ export function ChatPanel() {
     setLoading,
     setPendingAction
   ]);
+
+  const refreshSessions = useCallback(() => {
+    if (!ontology) return;
+    api.listSessions(currentDomain).then(setSessions).catch(() => undefined);
+  }, [currentDomain, ontology, setSessions]);
+  refreshSessionsRef.current = refreshSessions;
 
   useEffect(() => {
     const key = sessionStorageKey(currentDomain);
@@ -446,7 +460,8 @@ export function ChatPanel() {
         })));
       })
       .catch(() => undefined);
-  }, [clearMessages, clearStreamTimeout, clearTraceEvents, currentDomain, ontology, replaceMessages, setPendingAction]);
+    refreshSessions();
+  }, [clearMessages, clearStreamTimeout, clearTraceEvents, currentDomain, ontology, refreshSessions, replaceMessages, setPendingAction]);
 
   useEffect(() => () => {
     clearStreamTimeout();
@@ -471,6 +486,47 @@ export function ChatPanel() {
     clearMessages();
     clearTraceEvents();
     setLoading("chat", false);
+    inputRef.current?.focus();
+  }
+
+  function deleteSession(target: SessionInfo) {
+    api.deleteSession(currentDomain, target.session_id)
+      .then(() => {
+        if (target.session_id === sessionId) newChat();
+        refreshSessions();
+      })
+      .catch(() => toast.error("删除失败"));
+  }
+
+  function loadSession(target: SessionInfo) {
+    if (target.session_id === sessionId) return;
+    streamRef.current?.close();
+    clearStreamTimeout();
+    streamRef.current = null;
+    assistantId.current = "";
+    reasoningTraceId.current = "";
+    currentTurnId.current = "";
+    messageSequence.current = 0;
+    setPendingAction(null);
+    clearMessages();
+    clearTraceEvents();
+    setLoading("chat", false);
+
+    const next = target.session_id;
+    localStorage.setItem(sessionStorageKey(currentDomain), next);
+    setSessionId(next);
+    setInput("");
+    setTurnCount(0);
+    api.getHistory(currentDomain, next)
+      .then((history) => {
+        replaceMessages(history.map((message) => ({
+          id: createClientId(),
+          role: message.role,
+          content: message.content,
+          createdAt: new Date().toISOString()
+        })));
+      })
+      .catch(() => undefined);
     inputRef.current?.focus();
   }
 
@@ -593,14 +649,27 @@ export function ChatPanel() {
           </div>
           <div className="flex items-center gap-2">
             {loading ? <ProcessingHeaderStatus onStop={() => stopStream("用户停止了当前请求。")} /> : null}
-            <button type="button" onClick={newChat} className="command-button">
+            <button type="button" onClick={() => { setSidebarOpen((v) => !v); refreshSessions(); }} className={`command-button ${sidebarOpen ? "command-button-active" : ""}`}>
+              <History className="h-4 w-4" />
+              会话记录
+            </button>
+            <button type="button" onClick={() => { newChat(); refreshSessions(); }} className="command-button">
               <ListRestart className="h-4 w-4" />
               新对话
             </button>
           </div>
         </div>
 
-        <div className="message-scroll" ref={messageScrollRef}>
+        <div className="chat-body">
+          {sidebarOpen ? (
+            <SessionSidebar
+              sessions={sessions}
+              activeSessionId={sessionId}
+              onSelect={loadSession}
+              onDelete={deleteSession}
+            />
+          ) : null}
+          <div className="message-scroll" ref={messageScrollRef}>
           {visibleMessages.length === 0 ? (
             <div className="flex h-full min-h-80 items-center justify-center">
               <div className="w-full max-w-3xl rounded-md border border-dashed p-6" style={{ borderColor: "var(--line)", background: "var(--bg-elevated)" }}>
@@ -634,6 +703,7 @@ export function ChatPanel() {
           )}
         </div>
 
+        </div>
         {pendingAction ? (
           <div className="border-t p-4" style={{ borderColor: "color-mix(in srgb, var(--warning) 50%, var(--line))", background: "var(--warning-soft)" }}>
             <div className="mb-3 text-sm font-semibold" style={{ color: "var(--warning)" }}>{pendingAction.title}</div>
@@ -729,6 +799,66 @@ export function ChatPanel() {
     </section>
   );
 }
+function formatSessionTime(raw: string) {
+  try {
+    const date = new Date(raw.includes("T") ? raw : `${raw}Z`);
+    if (Number.isNaN(date.getTime())) return raw;
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    if (isToday) return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) return `昨天 ${date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return raw;
+  }
+}
+
+function SessionSidebar({ sessions, activeSessionId, onSelect, onDelete }: {
+  sessions: SessionInfo[];
+  activeSessionId: string;
+  onSelect: (session: SessionInfo) => void;
+  onDelete: (session: SessionInfo) => void;
+}) {
+  return (
+    <div className="session-sidebar">
+      <div className="session-sidebar-header">
+        <MessageSquare className="h-4 w-4" style={{ color: "var(--accent-strong)" }} />
+        <span className="text-sm font-semibold" style={{ color: "var(--text)" }}>会话记录</span>
+        <Badge tone="blue">{sessions.length}</Badge>
+      </div>
+      <div className="session-sidebar-list">
+        {sessions.length ? sessions.map((session) => (
+          <div
+            key={session.session_id}
+            className={`session-item ${session.session_id === activeSessionId ? "session-item-active" : ""}`}
+          >
+            <button
+              type="button"
+              className="session-item-body"
+              onClick={() => onSelect(session)}
+            >
+              <div className="session-item-preview">{session.preview || "空会话"}</div>
+              <div className="session-item-meta">{formatSessionTime(session.updated_at)}</div>
+            </button>
+            <button
+              type="button"
+              className="session-item-delete"
+              title="删除会话"
+              onClick={(e) => { e.stopPropagation(); onDelete(session); }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )) : (
+          <div className="session-sidebar-empty">暂无历史会话</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function McpToolsMenu({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const ontology = useConsoleStore((state) => state.ontology);
   const status = useConsoleStore((state) => state.mcpStatus);

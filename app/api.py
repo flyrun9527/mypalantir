@@ -17,6 +17,7 @@ from oag.agent import Agent
 from oag.runtime.events import event_to_dict
 from oag.harness import Harness, HarnessConfig
 from oag.tools import RemoteMcpToolProvider
+from oag.runtime.session_store import SessionStore
 from oag_ontology.loader import load_domain
 from oag_ontology.registry import FunctionRegistry
 from oag_ontology.repository import ObjectRepository
@@ -231,15 +232,28 @@ def create_app(ontology: Ontology, repository: ObjectRepository,
 
         return EventSourceResponse(event_generator())
 
+    _db_dir = Path(".oag_data")
+    _db_dir.mkdir(parents=True, exist_ok=True)
+    _session_store = SessionStore(str(_db_dir / f"chat_{ontology.name}.db"))
+
+    @app.get("/agent/sessions")
+    def agent_sessions():
+        return _session_store.list_sessions()
+
+    @app.delete("/agent/sessions/{session_id}")
+    def delete_session(session_id: str):
+        _session_store.delete(session_id)
+        return {"ok": True}
+
     @app.get("/agent/history")
     async def agent_history(request: Request):
         session_id = request.query_params.get("session_id", "")
+        if not session_id:
+            return _session_store.list_sessions()
         try:
             active_agent = await get_agent_async()
         except Exception as exc:
             return JSONResponse({"error": f"MCP server unavailable: {exc}"}, 503)
-        if not session_id:
-            return active_agent.list_sessions()
         return active_agent.get_history(session_id)
 
     @app.get("/audit")

@@ -1,5 +1,5 @@
 import { domainBase } from "./domain";
-import type { AgentToolsPayload, ChatMessage, DomainSummary, McpCallResult, McpStatus, McpTool, Ontology, StreamEvent } from "../types/oag";
+import type { AgentToolsPayload, ChatMessage, DomainSummary, McpCallResult, McpStatus, McpTool, Ontology, SessionInfo, StreamEvent } from "../types/oag";
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
@@ -50,6 +50,16 @@ export const api = {
 
   getAgentTools(domain: string | null) {
     return requestJson<AgentToolsPayload>(`${domainBase(domain)}/agent/tools`);
+  },
+
+  listSessions(domain: string | null) {
+    return requestJson<SessionInfo[]>(`${domainBase(domain)}/agent/sessions`);
+  },
+
+  deleteSession(domain: string | null, sessionId: string) {
+    return requestJson<{ ok: boolean }>(`${domainBase(domain)}/agent/sessions/${encodeURIComponent(sessionId)}`, {
+      method: "DELETE"
+    });
   },
 
   getHistory(domain: string | null, sessionId: string) {

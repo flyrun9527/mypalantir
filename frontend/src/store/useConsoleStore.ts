@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
-import type { AgentTool, ChatMessage, DomainSummary, McpCallResult, McpStatus, McpTool, Ontology, PendingAction, QueryRow, TraceEvent } from "../types/oag";
+import type { AgentTool, ChatMessage, DomainSummary, McpCallResult, McpStatus, McpTool, Ontology, PendingAction, QueryRow, SessionInfo, TraceEvent } from "../types/oag";
 
 type ConsoleState = {
   domains: DomainSummary[];
@@ -17,6 +17,7 @@ type ConsoleState = {
   selectedObject: string | null;
   selectedFunction: string | null;
   queryRows: QueryRow[];
+  sessions: SessionInfo[];
   messages: ChatMessage[];
   traceEvents: TraceEvent[];
   pendingAction: PendingAction | null;
@@ -40,6 +41,7 @@ type ConsoleState = {
   setSelectedObject: (name: string | null) => void;
   setSelectedFunction: (name: string | null) => void;
   setQueryRows: (rows: QueryRow[]) => void;
+  setSessions: (sessions: SessionInfo[]) => void;
   appendMessage: (message: ChatMessage) => void;
   appendAssistantText: (id: string, text: string) => void;
   replaceMessages: (messages: ChatMessage[]) => void;
@@ -67,6 +69,7 @@ export const useConsoleStore = create<ConsoleState>()(
     selectedObject: null,
     selectedFunction: null,
     queryRows: [],
+    sessions: [],
     messages: [],
     traceEvents: [],
     pendingAction: null,
@@ -116,6 +119,9 @@ export const useConsoleStore = create<ConsoleState>()(
     }),
     setQueryRows: (rows) => set((state) => {
       state.queryRows = rows;
+    }),
+    setSessions: (sessions) => set((state) => {
+      state.sessions = sessions;
     }),
     appendMessage: (message) => set((state) => {
       state.messages.push(message);
